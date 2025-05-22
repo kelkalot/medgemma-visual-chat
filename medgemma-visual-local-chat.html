@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Visual Chat</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            padding: 20px;
+            background-color: #f0f0f0;
+            color: #333;
+            margin: 0;
+        }
+        .main-container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            max-width: 1000px; /* Adjusted width */
+            align-items: flex-start;
+        }
+        .video-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            flex-basis: 480px; /* Set a base width */
+            flex-shrink: 0;
+        }
+        .chat-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            flex-grow: 1;
+            height: calc(360px + 2px + 2px + 40px + 30px + 30px); /* Approx: video + borders + input + source_sel + file_upload_controls */
+            max-height: 600px; /* Adjusted max-height */
+            min-height: 300px;
+        }
+        #chatLog {
+            flex-grow: 1;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            min-height: 200px;
+        }
+        .chat-message {
+            padding: 8px 12px;
+            border-radius: 15px;
+            margin-bottom: 8px;
+            max-width: 85%;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        .chat-message.user {
+            background-color: #007bff;
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+        .chat-message.ai {
+            background-color: #e9ecef;
+            color: #333;
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
+        }
+        .chat-message.system { /* Style for system messages */
+            background-color: #f0f0f0;
+            color: #555;
+            text-align: center;
+            font-style: italic;
+            font-size: 0.9em;
+            border-radius: 5px;
+            max-width: 100%;
+        }
+        .chat-input-area {
+            display: flex;
+            gap: 10px;
+        }
+        #chatInput {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #sendChatButton {
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #28a745;
+            color: white;
+        }
+        #videoContainer {
+            position: relative;
+            width: 480px;
+            height: 360px;
+            border: 2px solid #333;
+            background-color: #000;
+            border-radius: 8px;
+        }
+        #videoFeed { display: block; width: 100%; height: 100%; border-radius: 6px; object-fit: cover; }
+        #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        label { font-weight: bold; margin-bottom: 5px; display: block;}
+        input[type="text"]#baseURL {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .source-selection, #videoFileUploadContainer, #videoFileControls {
+            margin-bottom: 10px;
+            display: flex; /* For layout of controls */
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap; /* Allow wrapping if space is tight */
+        }
+        .source-selection label, #videoFileUploadContainer label {
+            margin-bottom: 0; /* Override general label margin */
+        }
+        #videoFileControls button {
+            padding: 8px 12px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+        }
+        #videoFileControls button:hover {
+            background-color: #0056b3;
+        }
+        input[type="file"] {
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px; /* Consistent font size */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AI Visual Chat</h1>
+
+    <div class="main-container">
+        <div class="video-section">
+            <div class="source-selection">
+                <label><input type="radio" id="sourceWebcam" name="videoSource" value="webcam" checked> Webcam</label>
+                <label><input type="radio" id="sourceFile" name="videoSource" value="file"> Video File</label>
+            </div>
+
+            <div id="videoFileUploadContainer" style="display: none;">
+                <label for="videoFileInput">Upload:</label>
+                <input type="file" id="videoFileInput" accept="video/*">
+            </div>
+
+            <div id="videoContainer">
+                <video id="videoFeed" playsinline></video>
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div id="videoFileControls" style="display: none;">
+                <button id="playPauseButton">Play</button>
+            </div>
+
+            <div>
+                <label for="baseURL">Base API:</label>
+                <input type="text" id="baseURL" name="BaseURL" value="http://localhost:8080">
+            </div>
+        </div>
+
+        <div class="chat-section">
+            <div id="chatLog"></div>
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" placeholder="Ask a question...">
+                <button id="sendChatButton">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('videoFeed');
+        const overlayCanvas = document.getElementById('canvas');
+
+        const baseURLInput = document.getElementById('baseURL');
+        const chatLog = document.getElementById('chatLog');
+        const chatInput = document.getElementById('chatInput');
+        const sendChatButton = document.getElementById('sendChatButton');
+
+        const sourceWebcamRadio = document.getElementById('sourceWebcam');
+        const sourceFileRadio = document.getElementById('sourceFile');
+        const videoFileUploadContainer = document.getElementById('videoFileUploadContainer');
+        const videoFileInput = document.getElementById('videoFileInput');
+        const videoFileControls = document.getElementById('videoFileControls');
+        const playPauseButton = document.getElementById('playPauseButton');
+
+        let webcamStream = null;
+        let currentVideoSource = 'webcam';
+        let isChatting = false;
+        let chatHistory = [];
+        const MAX_HISTORY_TURNS = 5;
+
+        function addMessageToChatLog(message, sender) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('chat-message', sender);
+            messageElement.textContent = message;
+            chatLog.appendChild(messageElement);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        function stopWebcamStream() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+            if (video.srcObject) { // Ensure it's cleared from the video element if it was a webcam stream
+                 video.srcObject = null;
+            }
+        }
+
+        function clearVideoFile() {
+            if (video.src && video.src.startsWith('blob:')) {
+                URL.revokeObjectURL(video.src);
+            }
+            video.src = "";
+            video.removeAttribute('src'); // Ensure it's fully cleared
+            if (typeof video.load === 'function') { // Check if load exists
+                 video.load(); //  Forces video element to update
+            }
+            videoFileInput.value = "";
+            videoFileControls.style.display = 'none';
+        }
+
+        async function initWebcam() {
+            clearVideoFile();
+            videoFileUploadContainer.style.display = 'none';
+            videoFileControls.style.display = 'none';
+            video.muted = true; // Mute webcam by default
+            video.autoplay = true; // Autoplay for webcam
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                addMessageToChatLog("Webcam API not supported by this browser.", "system");
+                alert("Webcam API not supported. Try selecting a video file.");
+                sourceFileRadio.checked = true;
+                handleSourceChange();
+                return;
+            }
+
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                video.srcObject = webcamStream;
+                await video.play().catch(e => console.warn("Webcam play interrupted or failed:", e));
+
+                video.onloadedmetadata = () => {
+                    if (video.videoWidth > 0 && overlayCanvas) {
+                        overlayCanvas.width = video.clientWidth;
+                        overlayCanvas.height = video.clientHeight;
+                    }
+                };
+                addMessageToChatLog("Webcam activated.", "system");
+                currentVideoSource = 'webcam';
+                chatInput.placeholder = "Ask about the webcam feed...";
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                addMessageToChatLog(`Error accessing camera: ${err.name}. Ensure permissions and try again.`, "system");
+                alert(`Error accessing camera: ${err.name}. Ensure permissions are granted.`);
+                sourceFileRadio.checked = true;
+                handleSourceChange();
+            }
+        }
+
+        function loadVideoFile(event) {
+            stopWebcamStream();
+            video.srcObject = null;
+
+            const file = event.target.files[0];
+            if (file) {
+                clearVideoFile(); // Clear any previous file first
+                const fileURL = URL.createObjectURL(file);
+                video.src = fileURL;
+                video.autoplay = false; // Do not autoplay uploaded files
+                video.muted = false;    // Unmute for video files, user controls
+                video.loop = false;
+                if (typeof video.load === 'function') video.load();
+
+                videoFileControls.style.display = 'flex';
+                playPauseButton.textContent = 'Play';
+
+                video.onloadedmetadata = () => {
+                    if (video.videoWidth > 0 && overlayCanvas) {
+                        overlayCanvas.width = video.clientWidth;
+                        overlayCanvas.height = video.clientHeight;
+                    }
+                };
+                video.onplay = () => playPauseButton.textContent = 'Pause';
+                video.onpause = () => playPauseButton.textContent = 'Play';
+                video.onended = () => playPauseButton.textContent = 'Play';
+
+                addMessageToChatLog(`Video "${file.name}" loaded. Use Play/Pause.`, "system");
+                currentVideoSource = 'file';
+                chatInput.placeholder = "Ask about the loaded video...";
+            } else {
+                clearVideoFile(); // If no file selected (e.g., user cancelled)
+                chatInput.placeholder = "Upload a video to begin...";
+            }
+        }
+
+        function togglePlayPauseVideoFile() {
+            if (currentVideoSource !== 'file' || !video.src || video.src === "" || video.readyState < 1) return;
+
+            if (video.paused || video.ended) {
+                video.play().catch(e => {
+                    console.error("Error playing video:", e);
+                    addMessageToChatLog("Could not play video: " + e.message, "system");
+                });
+            } else {
+                video.pause();
+            }
+        }
+
+        function handleSourceChange() {
+            const selectedSource = document.querySelector('input[name="videoSource"]:checked').value;
+            if (selectedSource === 'webcam') {
+                currentVideoSource = 'webcam'; // Set early
+                initWebcam();
+            } else { // 'file'
+                currentVideoSource = 'file'; // Set early
+                stopWebcamStream();
+                video.autoplay = false; // Ensure autoplay is off for file mode
+                video.muted = false;    // Ensure muted is off for file mode
+                videoFileUploadContainer.style.display = 'flex';
+                if (!video.src || video.src === "" || video.currentSrc === "") {
+                    videoFileControls.style.display = 'none';
+                    addMessageToChatLog("Please upload a video file.", "system");
+                    chatInput.placeholder = "Upload a video and ask...";
+                } else {
+                    videoFileControls.style.display = 'flex'; // Video already loaded
+                    chatInput.placeholder = "Ask about the loaded video...";
+                }
+            }
+        }
+
+        function captureImage() {
+            let readyToCapture = false;
+            if (currentVideoSource === 'webcam') {
+                readyToCapture = webcamStream && video.srcObject && video.videoWidth > 0 && video.readyState >= video.HAVE_METADATA;
+            } else if (currentVideoSource === 'file') {
+                readyToCapture = video.src && video.videoWidth > 0 && video.readyState >= video.HAVE_CURRENT_DATA && !video.ended;
+            }
+
+            if (!readyToCapture) {
+                console.warn("Video source not ready for capture.");
+                let message = "Video source not ready. ";
+                if (currentVideoSource === 'webcam') message += "Ensure webcam is active.";
+                else message += "Ensure a video is loaded and playable/paused at a valid frame.";
+                addMessageToChatLog(message, "ai"); // Use AI to make it seem like assistant's observation
+                return null;
+            }
+
+            const captureCanvas = document.createElement('canvas');
+            captureCanvas.width = video.videoWidth;
+            captureCanvas.height = video.videoHeight;
+            const context = captureCanvas.getContext('2d');
+            context.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+            return captureCanvas.toDataURL('image/jpeg', 0.8);
+        }
+
+        async function sendApiRequest(messagesPayload, currentButton = null) {
+            const originalButtonText = currentButton ? currentButton.textContent : null;
+            let originalButtonDisabledState = false;
+            if (currentButton) {
+                 originalButtonDisabledState = currentButton.disabled;
+                 currentButton.textContent = "AI is processing...";
+                 currentButton.disabled = true;
+            }
+
+            try {
+                const response = await fetch(`${baseURLInput.value}/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        max_tokens: 350,
+                        messages: messagesPayload
+                    })
+                });
+                if (!response.ok) {
+                    const errorData = await response.text();
+                    return `Server error: ${response.status} - ${errorData}`;
+                }
+                const data = await response.json();
+                if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+                    return data.choices[0].message.content;
+                }
+                return "No response content found or unexpected format.";
+            } catch (error) {
+                console.error("API Request Error:", error);
+                return `Network or API error: ${error.message}`;
+            }
+            finally {
+                if (currentButton && originalButtonText !== null) {
+                    currentButton.textContent = originalButtonText;
+                    currentButton.disabled = originalButtonDisabledState;
+                }
+            }
+        }
+
+        async function handleSendChatMessage() {
+            const userQuestion = chatInput.value.trim();
+            if (!userQuestion || isChatting) return;
+
+            if (currentVideoSource === 'webcam' && (!webcamStream || !video.srcObject || video.readyState < video.HAVE_METADATA)) {
+                addMessageToChatLog("Webcam not available or not ready. Please select and enable webcam.", "ai");
+                return;
+            } else if (currentVideoSource === 'file' && (!video.src || video.src === "" || video.readyState < video.HAVE_CURRENT_DATA)) {
+                addMessageToChatLog("No video loaded or video not ready. Please upload and select a video file.", "ai");
+                return;
+            }
+            if (currentVideoSource === 'file' && !video.paused && !video.ended) {
+                addMessageToChatLog("FYI: Question is based on the current frame of the playing video. Pause for a specific frame.", "ai");
+            }
+
+            isChatting = true;
+            sendChatButton.disabled = true;
+            addMessageToChatLog(userQuestion, "user");
+            chatInput.value = "";
+
+            chatHistory.push({ role: "user", content: userQuestion });
+            if (chatHistory.length > MAX_HISTORY_TURNS * 2) {
+                chatHistory = chatHistory.slice(-(MAX_HISTORY_TURNS * 2));
+            }
+
+            const imageBase64URL = captureImage();
+            if (!imageBase64URL) {
+                chatHistory.pop(); // Remove user question if image capture failed
+                isChatting = false;
+                sendChatButton.disabled = false;
+                return;
+            }
+
+            const historyForAPI = chatHistory.slice(0, -1);
+            const currentTurnPayload = {
+                role: 'user',
+                content: [
+                    { type: 'text', text: userQuestion },
+                    { type: 'image_url', image_url: { url: imageBase64URL } }
+                ]
+            };
+            const finalMessagesForAPI = [...historyForAPI, currentTurnPayload];
+
+            const aiResponse = await sendApiRequest(finalMessagesForAPI, sendChatButton);
+            addMessageToChatLog(aiResponse, "ai");
+
+            chatHistory.push({ role: "assistant", content: aiResponse });
+            if (chatHistory.length > MAX_HISTORY_TURNS * 2) {
+                chatHistory = chatHistory.slice(-(MAX_HISTORY_TURNS * 2));
+            }
+
+            isChatting = false;
+            sendChatButton.disabled = false;
+            chatInput.focus();
+        }
+
+        sendChatButton.addEventListener('click', handleSendChatMessage);
+        chatInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                handleSendChatMessage();
+            }
+        });
+
+        sourceWebcamRadio.addEventListener('change', handleSourceChange);
+        sourceFileRadio.addEventListener('change', handleSourceChange);
+        videoFileInput.addEventListener('change', loadVideoFile);
+        playPauseButton.addEventListener('click', togglePlayPauseVideoFile);
+
+        window.addEventListener('DOMContentLoaded', () => {
+            addMessageToChatLog("Hi there! I am your visual assistant. Choose a video source and ask a question!", "ai");
+            if (sourceWebcamRadio.checked) {
+                handleSourceChange(); // Will call initWebcam
+            } else { // Should default to webcam due to 'checked', but as a fallback:
+                sourceWebcamRadio.checked = true;
+                handleSourceChange();
+            }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            stopWebcamStream();
+            clearVideoFile();
+        });
+    </script>
+</body>
+</html>
